@@ -2,7 +2,7 @@
 
 SAGE es una aplicación completa desarrollada en Flutter diseñada para gestionar, ejecutar y compartir scripts en un entorno colaborativo y seguro. Cuenta con autenticación de doble factor, ejecución de scripts, gestión de usuarios y un chatbot integrado potenciado por la IA DeepSeek.
 
-![Logo de SAGE](https://via.placeholder.com/200x200)
+
 
 ## 🌟 Características
 
@@ -34,7 +34,10 @@ SAGE es una aplicación completa desarrollada en Flutter diseñada para gestiona
 
 | Pantalla de Inicio | Panel de Scripts | Chatbot |
 |-------------|-----------------|---------|
-| ![Login](https://via.placeholder.com/250x500) | ![Scripts](https://via.placeholder.com/250x500) | ![Chatbot](https://via.placeholder.com/250x500) |
+| ![Login](![login](https://github.com/user-attachments/assets/166ca57c-93b4-4815-adbb-c12d56cd0ff4)
+) | ![Scripts](![scripts](https://github.com/user-attachments/assets/6c732782-8eae-4a55-8803-447d9fd1ce90)
+) | ![Chatbot](![chatbot](https://github.com/user-attachments/assets/c8151b8f-7710-494a-8df7-15bb8f91c952)
+) |
 
 ## 🛠️ Tecnologías
 
