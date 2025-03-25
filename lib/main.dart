@@ -11,7 +11,7 @@ import 'utils/localization.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize window settings for desktop
   await windowManager.ensureInitialized();
   await Window.initialize();
@@ -19,15 +19,17 @@ void main() async {
     effect: WindowEffect.acrylic,
     color: Colors.transparent,
   );
-  
+
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(1200, 800),
+    size: Size(1280, 800),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
+    title: "SAGE Scripts Platform",
+    minimumSize: Size(800, 600),
   );
-  
+
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
@@ -43,8 +45,8 @@ void main() async {
           create: (context) => AuthService(
             Provider.of<DatabaseService>(context, listen: false),
           ),
-          update: (context, database, previous) => 
-            previous ?? AuthService(database),
+          update: (context, database, previous) =>
+              previous ?? AuthService(database),
         ),
       ],
       child: const CollaborativeScriptsApp(),
@@ -59,7 +61,7 @@ class CollaborativeScriptsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final localizationProvider = Provider.of<LocalizationProvider>(context);
-    
+
     return MaterialApp(
       title: localizationProvider.getText('title'),
       debugShowCheckedModeBanner: false,
@@ -80,7 +82,6 @@ class CollaborativeScriptsApp extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        // Eliminada la referencia a fontFamily
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
@@ -97,7 +98,6 @@ class CollaborativeScriptsApp extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        // Eliminada la referencia a fontFamily
       ),
       home: const LoginScreen(),
     );

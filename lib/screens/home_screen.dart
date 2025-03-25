@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import 'dart:io';
 
 import '../services/auth_service.dart';
 import '../utils/localization.dart';
@@ -21,19 +22,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WindowListener {
   int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
   }
-  
+
   @override
   void dispose() {
     windowManager.removeListener(this);
     super.dispose();
   }
-  
+
   @override
   void onWindowClose() async {
     bool _isPreventClose = await windowManager.isPreventClose();
@@ -64,24 +65,23 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       );
     }
   }
-  
+
   void _logout() {
     final authService = Provider.of<AuthService>(context, listen: false);
     authService.logout();
-    
+
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen())
-    );
+        MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final localization = Provider.of<LocalizationProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
     final authService = Provider.of<AuthService>(context);
-    
+
     final isAdmin = authService.isAdmin;
-    
+
     // Determine available tabs
     final tabs = [
       // Scripts tab - always available
@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         screen: const HistoryScreen(),
       ),
     ];
-    
+
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
@@ -132,44 +132,185 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           },
         ),
         actions: [
+          // Menú de Archivo
+          PopupMenuButton<String>(
+            tooltip: 'Archivo',
+            icon: const Icon(Icons.file_present),
+            onSelected: (value) {
+              switch (value) {
+                case 'new':
+                  // Crear nuevo script
+                  break;
+                case 'open':
+                  // Abrir script
+                  break;
+                case 'save':
+                  // Guardar script
+                  break;
+                case 'exit':
+                  _logout();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'new',
+                child: Row(
+                  children: [
+                    const Icon(Icons.add, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Nuevo Script'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'open',
+                child: Row(
+                  children: [
+                    const Icon(Icons.folder_open, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Abrir Script'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'save',
+                child: Row(
+                  children: [
+                    const Icon(Icons.save, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Guardar Script'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'exit',
+                child: Row(
+                  children: [
+                    const Icon(Icons.exit_to_app, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Salir'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Menú Editar
+          PopupMenuButton<String>(
+            tooltip: 'Editar',
+            icon: const Icon(Icons.edit),
+            onSelected: (value) {
+              // Implementar acciones del menú editar
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'cut',
+                child: Row(
+                  children: [
+                    const Icon(Icons.content_cut, size: 18),
+                    const SizedBox(width: 8),
+                    const Text('Cortar'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'copy',
+                child: Row(
+                  children: [
+                    const Icon(Icons.content_copy, size: 18),
+                    const SizedBox(width: 8),
+                    const Text('Copiar'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'paste',
+                child: Row(
+                  children: [
+                    const Icon(Icons.content_paste, size: 18),
+                    const SizedBox(width: 8),
+                    const Text('Pegar'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Botones originales
           IconButton(
             icon: const Icon(Icons.language),
+            tooltip: '${localization.getText('language')} (Alt+L)',
             onPressed: () {
-              Provider.of<LocalizationProvider>(context, listen: false).toggleLocale();
+              Provider.of<LocalizationProvider>(context, listen: false)
+                  .toggleLocale();
             },
           ),
           IconButton(
             icon: Icon(
               themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
             ),
+            tooltip: '${localization.getText('theme')} (Alt+T)',
             onPressed: () {
               Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
             },
           ),
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: '${localization.getText('logout')} (Alt+Q)',
             onPressed: _logout,
           ),
+
+          // Botones de control de ventana en Windows/Linux
+          if (Platform.isWindows || Platform.isLinux) ...[
+            IconButton(
+              icon: const Icon(Icons.minimize, size: 18),
+              tooltip: 'Minimizar',
+              onPressed: () {
+                windowManager.minimize();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.crop_square, size: 18),
+              tooltip: 'Maximizar',
+              onPressed: () async {
+                if (await windowManager.isMaximized()) {
+                  windowManager.unmaximize();
+                } else {
+                  windowManager.maximize();
+                }
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: 'Cerrar',
+              onPressed: () {
+                windowManager.close();
+              },
+            ),
+          ],
         ],
         backgroundColor: themeProvider.appBarBackground(context),
         elevation: 0,
         // Make the window draggable from the AppBar (Windows desktop feature)
         toolbarHeight: 50,
-        flexibleSpace: SizedBox(
-          height: 50,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onPanStart: (details) {
-              windowManager.startDragging();
-            },
-            onDoubleTap: () async {
-              bool isMaximized = await windowManager.isMaximized();
-              if (isMaximized) {
-                windowManager.unmaximize();
-              } else {
-                windowManager.maximize();
-              }
-            },
+        flexibleSpace: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onPanStart: (details) {
+            windowManager.startDragging();
+          },
+          onDoubleTap: () async {
+            bool isMaximized = await windowManager.isMaximized();
+            if (isMaximized) {
+              windowManager.unmaximize();
+            } else {
+              windowManager.maximize();
+            }
+          },
+          child: Container(
+            color: Colors.transparent,
+            height: 50,
           ),
         ),
       ),
@@ -207,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                     Text(
                       authService.isAdmin
                           ? localization.getText('admin')
-                          : localization.getText('user'),
+                          : 'Usuario',
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
@@ -217,28 +358,27 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 ),
               ),
               ...tabs.map((tab) => ListTile(
-                leading: Icon(
-                  tab.icon,
-                  color: _currentIndex == tab.index
-                      ? themeProvider.primaryButtonColor(context)
-                      : null,
-                ),
-                title: Text(
-                  tab.title,
-                  style: TextStyle(
-                    color: _currentIndex == tab.index
-                        ? themeProvider.primaryButtonColor(context)
-                        : null,
-                    fontWeight: _currentIndex == tab.index
-                        ? FontWeight.bold
-                        : null,
-                  ),
-                ),
-                onTap: () {
-                  setState(() => _currentIndex = tab.index);
-                  Navigator.pop(context); // Close drawer
-                },
-              )),
+                    leading: Icon(
+                      tab.icon,
+                      color: _currentIndex == tab.index
+                          ? themeProvider.primaryButtonColor(context)
+                          : null,
+                    ),
+                    title: Text(
+                      tab.title,
+                      style: TextStyle(
+                        color: _currentIndex == tab.index
+                            ? themeProvider.primaryButtonColor(context)
+                            : null,
+                        fontWeight:
+                            _currentIndex == tab.index ? FontWeight.bold : null,
+                      ),
+                    ),
+                    onTap: () {
+                      setState(() => _currentIndex = tab.index);
+                      Navigator.pop(context); // Close drawer
+                    },
+                  )),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.logout),
@@ -262,10 +402,12 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         backgroundColor: themeProvider.cardBackground(context),
         selectedItemColor: themeProvider.primaryButtonColor(context),
         unselectedItemColor: themeProvider.secondaryTextColor(context),
-        items: tabs.map((tab) => BottomNavigationBarItem(
-          icon: Icon(tab.icon),
-          label: tab.title,
-        )).toList(),
+        items: tabs
+            .map((tab) => BottomNavigationBarItem(
+                  icon: Icon(tab.icon),
+                  label: tab.title,
+                ))
+            .toList(),
       ),
     );
   }
@@ -276,7 +418,7 @@ class _TabItem {
   final String title;
   final IconData icon;
   final Widget screen;
-  
+
   _TabItem({
     required this.index,
     required this.title,
