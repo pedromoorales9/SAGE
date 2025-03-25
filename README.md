@@ -30,14 +30,22 @@ SAGE es una aplicación completa desarrollada en Flutter diseñada para gestiona
 - Funcionalidad de exportación para registros y scripts
 - Estadísticas completas para scripts (recuento de ejecuciones, descargas, etc.)
 
-## 📱 Capturas de pantalla
 
-| Pantalla de Inicio | Panel de Scripts | Chatbot |
-|-------------|-----------------|---------|
-| ![Login](![login](https://github.com/user-attachments/assets/166ca57c-93b4-4815-adbb-c12d56cd0ff4)
-) | ![Scripts](![scripts](https://github.com/user-attachments/assets/6c732782-8eae-4a55-8803-447d9fd1ce90)
-) | ![Chatbot](![chatbot](https://github.com/user-attachments/assets/c8151b8f-7710-494a-8df7-15bb8f91c952)
-) |
+
+## capturas de pantalla
+
+![login](https://github.com/user-attachments/assets/f4a88b3b-c961-431a-b962-48bfc22a6d5f)
+
+
+
+![scripts](https://github.com/user-attachments/assets/ff062f44-6de2-45e6-a971-492ff40f5bfd)
+
+
+
+![chatbot](https://github.com/user-attachments/assets/99608c56-408f-4bd8-b749-47fdffa5d50e)
+
+
+
 
 ## 🛠️ Tecnologías
 
@@ -151,7 +159,8 @@ Este proyecto está licenciado bajo la Licencia MIT - ver el archivo LICENSE par
 
 ## 👨‍💻 Autores
 
-- **Pedro Miguel** & **Eloy Ramirez Revuelta**
+- Desarrollado por **Pedro Miguel Morales**
+- Co-Desarrollado por **Eloy ramirez Revuelta**
 
 ---
 
