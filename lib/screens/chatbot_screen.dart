@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'dart:math' as math;
 
 import '../utils/localization.dart';
 import '../utils/theme_provider.dart';
@@ -14,6 +16,8 @@ class ChatMessage {
   final bool isUser;
   final DateTime timestamp;
   bool isLoading;
+  // Nuevo: Controlador para la animación de escritura
+  final StreamController<String> typingController = StreamController<String>();
 
   ChatMessage({
     required this.content,
@@ -21,6 +25,11 @@ class ChatMessage {
     required this.timestamp,
     this.isLoading = false,
   });
+
+  // Cerrar el controlador al finalizar
+  void dispose() {
+    typingController.close();
+  }
 }
 
 class ChatbotScreen extends StatefulWidget {
@@ -37,6 +46,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   bool _isTyping = false;
   final String _ollamaUrl = "http://localhost:11434/api/generate";
   final List<Map<String, String>> _chatHistory = [];
+  // Nuevas variables para controlar la velocidad de escritura
+  // Velocidad base para la simulación de escritura (ajustada a un valor más realista)
+  final Duration _typingDelay = Duration(milliseconds: 25);
 
   @override
   void initState() {
@@ -47,12 +59,56 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   void _addSuggestedPrompts() {
     setState(() {
       // Añadir chatMessage de sistema con sugerencias
-      _messages.add(ChatMessage(
+      final initialMessage = ChatMessage(
         content:
             "¡Hola! Soy tu asistente de código DeepSeek. Puedes preguntarme sobre Python, PowerShell, o pedirme ayuda con tus scripts.\n\nAlgunas sugerencias:\n- Escribe un script para listar archivos en un directorio\n- Cómo leer un CSV en Python\n- Cómo hacer un backup automático con PowerShell",
         isUser: false,
         timestamp: DateTime.now(),
-      ));
+      );
+      _messages.add(initialMessage);
+
+      // Simular efecto de escritura para el mensaje inicial
+      _simulateTyping(initialMessage);
+    });
+  }
+
+  // Nueva función para simular el efecto de escritura
+  Future<void> _simulateTyping(ChatMessage message) async {
+    if (message.isUser) return; // Solo aplicar a mensajes de la IA
+
+    final String fullText = message.content;
+    message.content = '';
+
+    // Simular escritura carácter por carácter con velocidad variable
+    for (int i = 0; i < fullText.length; i++) {
+      // Añadir el siguiente carácter
+      setState(() {
+        message.content = fullText.substring(0, i + 1);
+      });
+      message.typingController.add(message.content);
+      _scrollToBottom();
+
+      // Calcular retraso variable basado en puntuación y aleatoriedad
+      int delay = _typingDelay.inMilliseconds;
+      if (i < fullText.length - 1) {
+        if ('.!?'.contains(fullText[i])) {
+          delay *= 3; // Pausa mayor después de final de frase
+        } else if (', ;:'.contains(fullText[i])) {
+          delay *= 2; // Pausa media después de comas y punto y coma
+        } else if (i > 0 && fullText[i - 1] == '\n' && fullText[i] == '\n') {
+          delay *= 4; // Pausa extra entre párrafos
+        } else {
+          // Ligera variación aleatoria para que la escritura parezca humana
+          delay += (delay * 0.5 * (math.Random().nextDouble() - 0.5)).toInt();
+        }
+      }
+
+      await Future.delayed(Duration(milliseconds: delay));
+    }
+
+    // Marcar como completado
+    setState(() {
+      message.isLoading = false;
     });
   }
 
@@ -60,6 +116,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    // Limpiar todos los controladores de stream
+    for (var message in _messages) {
+      message.dispose();
+    }
     super.dispose();
   }
 
@@ -115,46 +175,92 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     _chatHistory.add({'role': 'user', 'content': text});
 
     try {
-      // Prepare request payload
+      // Prepare request payload - Ahora usamos streaming
       final payload = {
         'model': 'deepseek-coder:1.3b',
         'prompt': text,
-        'stream': false, // Cambiado a false para manejar mejor la codificación
+        'stream': true, // Cambio principal: activar streaming
         'context': _chatHistory.length > 1
             ? _chatHistory.sublist(0, _chatHistory.length - 1)
             : [],
         'options': {'temperature': 0.7, 'top_p': 0.9, 'num_predict': 1000}
       };
 
-      // Hacer solicitud a Ollama API (no streaming)
-      final response = await http.post(
-        Uri.parse(_ollamaUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      );
+      // Cliente para hacer streaming con soporte UTF-8 adecuado
+      _httpClient = http.Client();
+      final request = http.Request('POST', Uri.parse(_ollamaUrl));
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode(payload);
 
-      if (response.statusCode == 200) {
-        // Decodificar la respuesta JSON
-        final Map<String, dynamic> data =
-            jsonDecode(utf8.decode(response.bodyBytes));
-        final String aiResponse = data['response'] ?? '';
+      final streamedResponse = await _httpClient.send(request);
+
+      if (streamedResponse.statusCode == 200) {
+        String completeResponse = '';
+
+        // Crear un stream de bytes para procesar correctamente la codificación UTF-8
+        final stream = streamedResponse.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
+
+        await for (var line in stream) {
+          if (line.trim().isEmpty) continue;
+
+          try {
+            final data = jsonDecode(line);
+            final chunk = data['response'] ?? '';
+
+            // Para que la escritura parezca más natural, procesamos carácter por carácter
+            // con pequeñas variaciones en la velocidad
+            for (int i = 0; i < chunk.length; i++) {
+              completeResponse += chunk[i];
+
+              // Actualizar el mensaje con cada carácter
+              setState(() {
+                aiMessage.content = completeResponse;
+              });
+
+              aiMessage.typingController.add(completeResponse);
+              _scrollToBottom();
+
+              // Variación aleatoria en la velocidad de escritura para efecto más natural
+              // Los signos de puntuación causan pausas más largas
+              int delay = _typingDelay.inMilliseconds;
+              if ('.!?'.contains(chunk[i])) {
+                delay *= 3; // Pausa mayor después de final de frase
+              } else if (', ;:'.contains(chunk[i])) {
+                delay *= 2; // Pausa media después de comas y punto y coma
+              } else if (i > 0 && chunk[i - 1] == '\n' && chunk[i] == '\n') {
+                delay *= 4; // Pausa extra entre párrafos
+              } else {
+                // Ligera variación aleatoria en la velocidad de escritura
+                delay +=
+                    (delay * 0.5 * (math.Random().nextDouble() - 0.5)).toInt();
+              }
+
+              await Future.delayed(Duration(milliseconds: delay));
+            }
+          } catch (e) {
+            print('Error processing line: $e');
+          }
+        }
 
         setState(() {
-          aiMessage.content = aiResponse;
           aiMessage.isLoading = false;
         });
 
         // Update chat history with AI response
-        _chatHistory.add({'role': 'assistant', 'content': aiResponse});
+        _chatHistory.add({'role': 'assistant', 'content': completeResponse});
       } else {
+        // Manejar errores de la API
         setState(() {
-          aiMessage.content = 'Error ${response.statusCode}: ${response.body}';
+          aiMessage.content =
+              'Error ${streamedResponse.statusCode}: No se pudo conectar con el servicio de IA';
           aiMessage.isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        aiMessage.content = 'Error connecting to AI service: $e';
+        aiMessage.content = 'Error al conectar con el servicio de IA: $e';
         aiMessage.isLoading = false;
       });
     } finally {
@@ -167,6 +273,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   }
 
   void _clearChat() {
+    // Cerrar todos los StreamControllers antes de limpiar
+    for (var message in _messages) {
+      message.dispose();
+    }
+
     setState(() {
       _messages.clear();
       _chatHistory.clear();
@@ -183,6 +294,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     "Script para hacer backup automático",
     "Genera un menú interactivo en Python"
   ];
+
+  // Cliente HTTP para streaming
+  late http.Client _httpClient;
 
   @override
   Widget build(BuildContext context) {
@@ -391,14 +505,22 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                           color: themeProvider.primaryButtonColor(context),
                           borderRadius: BorderRadius.circular(20),
                           child: InkWell(
-                            onTap: _sendMessage,
+                            onTap: _isTyping ? null : _sendMessage,
                             borderRadius: BorderRadius.circular(20),
                             child: Container(
                               padding: const EdgeInsets.all(12),
-                              child: const Icon(
-                                Icons.send,
-                                color: Colors.white,
-                              ),
+                              child: _isTyping
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ))
+                                  : const Icon(
+                                      Icons.send,
+                                      color: Colors.white,
+                                    ),
                             ),
                           ),
                         ),
@@ -415,7 +537,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   }
 }
 
-class _ChatBubble extends StatelessWidget {
+class _ChatBubble extends StatefulWidget {
   final ChatMessage message;
   final String username;
 
@@ -426,9 +548,34 @@ class _ChatBubble extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  _ChatBubbleState createState() => _ChatBubbleState();
+}
+
+class _ChatBubbleState extends State<_ChatBubble> {
+  // Variable para almacenar el contenido actual del mensaje
+  String _currentContent = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _currentContent = widget.message.content;
+
+    // Suscribirse al stream de tipeo si no es un mensaje de usuario
+    if (!widget.message.isUser) {
+      widget.message.typingController.stream.listen((content) {
+        if (mounted) {
+          setState(() {
+            _currentContent = content;
+          });
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final isUser = message.isUser;
+    final isUser = widget.message.isUser;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -457,7 +604,7 @@ class _ChatBubble extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    username,
+                    widget.username,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -474,7 +621,8 @@ class _ChatBubble extends StatelessWidget {
                         : themeProvider.inputBackground(context),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: message.isLoading
+                  child: widget.message.isLoading && _currentContent.isEmpty
+                      // Mostrar spinner solo si está cargando y no hay contenido
                       ? SizedBox(
                           width: 20,
                           height: 20,
@@ -487,19 +635,40 @@ class _ChatBubble extends StatelessWidget {
                             ),
                           ),
                         )
-                      : SelectableText(
-                          message.content,
-                          style: TextStyle(
-                            color: isUser
-                                ? Colors.white
-                                : themeProvider.textColor(context),
-                          ),
+                      // Contenido del mensaje con cursor parpadeante si está cargando
+                      : Stack(
+                          children: [
+                            // Texto del mensaje con marcado para código
+                            SelectableText.rich(
+                              _buildFormattedText(_currentContent, isUser,
+                                  themeProvider, context),
+                              style: TextStyle(
+                                color: isUser
+                                    ? Colors.white
+                                    : themeProvider.textColor(context),
+                                height:
+                                    1.5, // Mejor espaciado de línea para legibilidad
+                              ),
+                            ),
+                            // Cursor parpadeante al final del texto
+                            if (widget.message.isLoading && !isUser)
+                              Positioned(
+                                right: 0,
+                                bottom:
+                                    2, // Ajuste para alinear mejor con el texto
+                                child: BlinkingCursor(
+                                  color: isUser
+                                      ? Colors.white
+                                      : themeProvider.textColor(context),
+                                ),
+                              ),
+                          ],
                         ),
                 ),
                 Container(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                    '${widget.message.timestamp.hour}:${widget.message.timestamp.minute.toString().padLeft(2, '0')}',
                     style: TextStyle(
                       fontSize: 10,
                       color: themeProvider.secondaryTextColor(context),
@@ -522,6 +691,119 @@ class _ChatBubble extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// Función para formatear el texto y resaltar código
+TextSpan _buildFormattedText(String text, bool isUser,
+    ThemeProvider themeProvider, BuildContext context) {
+  // Buscar bloques de código (delimitados por ```)
+  final RegExp codeBlockRegex = RegExp(r'```([\s\S]*?)```', multiLine: true);
+  final List<InlineSpan> spans = [];
+
+  int lastMatchEnd = 0;
+
+  // Encontrar todos los bloques de código
+  for (final Match match in codeBlockRegex.allMatches(text)) {
+    // Añadir texto antes del bloque de código
+    if (match.start > lastMatchEnd) {
+      spans.add(TextSpan(
+        text: text.substring(lastMatchEnd, match.start),
+      ));
+    }
+
+    // Extraer y formatear el código
+    final String code = match.group(1) ?? '';
+    spans.add(
+      WidgetSpan(
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isUser
+                ? Colors.black.withOpacity(0.5)
+                : Colors.black.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SelectableText(
+            code.trim(),
+            style: TextStyle(
+              fontFamily: 'Consolas, Monaco, Courier New, monospace',
+              color: isUser
+                  ? Colors.white
+                  : themeProvider.primaryButtonColor(context),
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    lastMatchEnd = match.end;
+  }
+
+  // Añadir el resto del texto después del último bloque de código
+  if (lastMatchEnd < text.length) {
+    spans.add(TextSpan(
+      text: text.substring(lastMatchEnd),
+    ));
+  }
+
+  // Si no hay bloques de código, devolver solo el texto
+  if (spans.isEmpty) {
+    return TextSpan(text: text);
+  }
+
+  return TextSpan(children: spans);
+}
+
+// Cursor parpadeante separado como widget
+class BlinkingCursor extends StatefulWidget {
+  final Color color;
+
+  const BlinkingCursor({
+    Key? key,
+    required this.color,
+  }) : super(key: key);
+
+  @override
+  _BlinkingCursorState createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: Container(
+        width: 2,
+        height: 14,
+        color: widget.color,
       ),
     );
   }
