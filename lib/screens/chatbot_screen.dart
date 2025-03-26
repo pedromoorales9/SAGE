@@ -14,7 +14,7 @@ class ChatMessage {
   final bool isUser;
   final DateTime timestamp;
   bool isLoading;
-  
+
   ChatMessage({
     required this.content,
     required this.isUser,
@@ -37,14 +37,32 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   bool _isTyping = false;
   final String _ollamaUrl = "http://localhost:11434/api/generate";
   final List<Map<String, String>> _chatHistory = [];
-  
+
+  @override
+  void initState() {
+    super.initState();
+    _addSuggestedPrompts();
+  }
+
+  void _addSuggestedPrompts() {
+    setState(() {
+      // Añadir chatMessage de sistema con sugerencias
+      _messages.add(ChatMessage(
+        content:
+            "¡Hola! Soy tu asistente de código DeepSeek. Puedes preguntarme sobre Python, PowerShell, o pedirme ayuda con tus scripts.\n\nAlgunas sugerencias:\n- Escribe un script para listar archivos en un directorio\n- Cómo leer un CSV en Python\n- Cómo hacer un backup automático con PowerShell",
+        isUser: false,
+        timestamp: DateTime.now(),
+      ));
+    });
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -56,15 +74,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       }
     });
   }
-  
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    final localization = Provider.of<LocalizationProvider>(context, listen: false);
-    
+    final localization =
+        Provider.of<LocalizationProvider>(context, listen: false);
+
     if (text.isEmpty || text == localization.getText('placeholder_chat')) {
       return;
     }
-    
+
     // Add user message
     setState(() {
       _messages.add(ChatMessage(
@@ -75,9 +94,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       _messageController.clear();
       _isTyping = true;
     });
-    
+
     _scrollToBottom();
-    
+
     // Add AI placeholder message
     final aiMessage = ChatMessage(
       content: '',
@@ -85,64 +104,48 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       timestamp: DateTime.now(),
       isLoading: true,
     );
-    
+
     setState(() {
       _messages.add(aiMessage);
     });
-    
+
     _scrollToBottom();
-    
+
     // Update chat history
     _chatHistory.add({'role': 'user', 'content': text});
-    
+
     try {
       // Prepare request payload
       final payload = {
         'model': 'deepseek-coder:1.3b',
         'prompt': text,
-        'stream': true,
-        'context': _chatHistory.length > 1 
+        'stream': false, // Cambiado a false para manejar mejor la codificación
+        'context': _chatHistory.length > 1
             ? _chatHistory.sublist(0, _chatHistory.length - 1)
             : [],
-        'options': {
-          'temperature': 0.7,
-          'top_p': 0.9,
-          'num_predict': 1000
-        }
+        'options': {'temperature': 0.7, 'top_p': 0.9, 'num_predict': 1000}
       };
-      
-      // Make streaming request to Ollama API
+
+      // Hacer solicitud a Ollama API (no streaming)
       final response = await http.post(
         Uri.parse(_ollamaUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
       );
-      
+
       if (response.statusCode == 200) {
-        final responseLines = response.body.split('\n');
-        String fullResponse = '';
-        
-        for (final line in responseLines) {
-          if (line.isNotEmpty) {
-            try {
-              final json = jsonDecode(line);
-              final chunk = json['response'] as String? ?? '';
-              fullResponse += chunk;
-              
-              setState(() {
-                aiMessage.content = fullResponse;
-                aiMessage.isLoading = false;
-              });
-              
-              _scrollToBottom();
-            } catch (e) {
-              print('Error parsing line: $e');
-            }
-          }
-        }
-        
+        // Decodificar la respuesta JSON
+        final Map<String, dynamic> data =
+            jsonDecode(utf8.decode(response.bodyBytes));
+        final String aiResponse = data['response'] ?? '';
+
+        setState(() {
+          aiMessage.content = aiResponse;
+          aiMessage.isLoading = false;
+        });
+
         // Update chat history with AI response
-        _chatHistory.add({'role': 'assistant', 'content': fullResponse});
+        _chatHistory.add({'role': 'assistant', 'content': aiResponse});
       } else {
         setState(() {
           aiMessage.content = 'Error ${response.statusCode}: ${response.body}';
@@ -158,24 +161,35 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       setState(() {
         _isTyping = false;
       });
-      
+
       _scrollToBottom();
     }
   }
-  
+
   void _clearChat() {
     setState(() {
       _messages.clear();
       _chatHistory.clear();
+      _addSuggestedPrompts();
     });
   }
-  
+
+  // Lista de prompts sugeridos para mostrar como chips
+  final List<String> _promptSuggestions = [
+    "Escribe un script para ordenar archivos",
+    "Cómo leer un CSV en Python",
+    "Ejemplo de función en PowerShell",
+    "Cómo conectarme a una base de datos MySQL",
+    "Script para hacer backup automático",
+    "Genera un menú interactivo en Python"
+  ];
+
   @override
   Widget build(BuildContext context) {
     final localization = Provider.of<LocalizationProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
     final authService = Provider.of<AuthService>(context);
-    
+
     return Scaffold(
       backgroundColor: themeProvider.scaffoldBackground(context),
       body: Column(
@@ -187,7 +201,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             child: Row(
               children: [
                 Text(
-                  _isTyping 
+                  _isTyping
                       ? "Typing..."
                       : localization.getText('status_ready'),
                   style: TextStyle(
@@ -204,7 +218,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ],
             ),
           ),
-          
+
           // Main Content
           Expanded(
             child: Card(
@@ -218,10 +232,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 children: [
                   // Chatbot Header
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: themeProvider.primaryButtonColor(context).withOpacity(0.1),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                      color: themeProvider
+                          .primaryButtonColor(context)
+                          .withOpacity(0.1),
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(10)),
                     ),
                     child: Row(
                       children: [
@@ -231,7 +249,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          localization.getText('chatbot_title'),
+                          "Chatbot DeepSeek",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -244,18 +262,19 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                           icon: const Icon(Icons.delete_sweep),
                           label: Text(localization.getText('limpiar_chat')),
                           style: TextButton.styleFrom(
-                            foregroundColor: themeProvider.secondaryTextColor(context),
+                            foregroundColor:
+                                themeProvider.secondaryTextColor(context),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
+
                   // Chat Messages
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.all(16),
-                      child: _messages.isEmpty 
+                      child: _messages.isEmpty
                           ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -263,13 +282,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                                   Icon(
                                     Icons.chat_bubble_outline,
                                     size: 64,
-                                    color: themeProvider.secondaryTextColor(context).withOpacity(0.3),
+                                    color: themeProvider
+                                        .secondaryTextColor(context)
+                                        .withOpacity(0.3),
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
                                     'Start a conversation with DeepSeek Chatbot',
                                     style: TextStyle(
-                                      color: themeProvider.secondaryTextColor(context),
+                                      color: themeProvider
+                                          .secondaryTextColor(context),
                                       fontSize: 16,
                                     ),
                                   ),
@@ -281,24 +303,60 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                               itemCount: _messages.length,
                               itemBuilder: (context, index) {
                                 final message = _messages[index];
-                                
+
                                 return _ChatBubble(
                                   message: message,
-                                  username: message.isUser 
-                                      ? authService.currentUser?.username ?? 'You' 
+                                  username: message.isUser
+                                      ? authService.currentUser?.username ??
+                                          'You'
                                       : 'DeepSeek AI',
                                 );
                               },
                             ),
                     ),
                   ),
-                  
+
+                  // Suggested prompts
+                  if (_messages.isNotEmpty && _messages.length < 3)
+                    Container(
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _promptSuggestions.length,
+                        itemBuilder: (context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: ActionChip(
+                              label: Text(
+                                _promptSuggestions[index].length > 20
+                                    ? '${_promptSuggestions[index].substring(0, 20)}...'
+                                    : _promptSuggestions[index],
+                                style: TextStyle(
+                                  fontSize: 12,
+                                ),
+                              ),
+                              backgroundColor:
+                                  themeProvider.cardBackground(context),
+                              onPressed: () {
+                                setState(() {
+                                  _messageController.text =
+                                      _promptSuggestions[index];
+                                });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
                   // Input Field
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: themeProvider.cardBackground(context),
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+                      borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(10)),
                       border: Border(
                         top: BorderSide(
                           color: themeProvider.dividerColor(context),
@@ -311,7 +369,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                           child: TextField(
                             controller: _messageController,
                             decoration: InputDecoration(
-                              hintText: localization.getText('placeholder_chat'),
+                              hintText:
+                                  localization.getText('placeholder_chat'),
                               filled: true,
                               fillColor: themeProvider.inputBackground(context),
                               border: OutlineInputBorder(
@@ -359,22 +418,23 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 class _ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final String username;
-  
+
   const _ChatBubble({
-    super.key,
+    Key? key,
     required this.message,
     required this.username,
-  });
-  
+  }) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isUser = message.isUser;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
@@ -389,10 +449,10 @@ class _ChatBubble extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
-          
           Flexible(
             child: Column(
-              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Container(
                   padding: const EdgeInsets.only(bottom: 4),
@@ -406,7 +466,8 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
                     color: isUser
                         ? themeProvider.primaryButtonColor(context)
@@ -420,11 +481,13 @@ class _ChatBubble extends StatelessWidget {
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              isUser ? Colors.white : themeProvider.primaryButtonColor(context),
+                              isUser
+                                  ? Colors.white
+                                  : themeProvider.primaryButtonColor(context),
                             ),
                           ),
                         )
-                      : Text(
+                      : SelectableText(
                           message.content,
                           style: TextStyle(
                             color: isUser
@@ -446,7 +509,6 @@ class _ChatBubble extends StatelessWidget {
               ],
             ),
           ),
-          
           if (isUser) ...[
             const SizedBox(width: 8),
             CircleAvatar(
