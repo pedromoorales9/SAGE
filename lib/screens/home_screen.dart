@@ -6,6 +6,7 @@ import 'dart:io';
 import '../services/auth_service.dart';
 import '../utils/localization.dart';
 import '../utils/theme_provider.dart';
+import '../utils/responsive.dart';
 import '../auth/login_screen.dart';
 import 'scripts_screen.dart';
 import 'admin_screen.dart';
@@ -22,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WindowListener {
   int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isExtendedRail = true;
 
   @override
   void initState() {
@@ -79,6 +81,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     final localization = Provider.of<LocalizationProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
     final authService = Provider.of<AuthService>(context);
+    final isDesktop = Responsive.isDesktop(context);
+    final isTablet = Responsive.isTablet(context);
 
     final isAdmin = authService.isAdmin;
 
@@ -128,7 +132,13 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () {
-            _scaffoldKey.currentState?.openDrawer();
+            if (isDesktop || isTablet) {
+              setState(() {
+                _isExtendedRail = !_isExtendedRail;
+              });
+            } else {
+              _scaffoldKey.currentState?.openDrawer();
+            }
           },
         ),
         actions: [
@@ -158,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.add, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     Text('Nuevo Script'),
                   ],
                 ),
@@ -168,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.folder_open, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     Text('Abrir Script'),
                   ],
                 ),
@@ -178,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.save, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     Text('Guardar Script'),
                   ],
                 ),
@@ -189,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.exit_to_app, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     Text('Salir'),
                   ],
                 ),
@@ -210,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.content_cut, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     const Text('Cortar'),
                   ],
                 ),
@@ -220,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.content_copy, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     const Text('Copiar'),
                   ],
                 ),
@@ -230,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                 child: Row(
                   children: [
                     const Icon(Icons.content_paste, size: 18),
-                    const SizedBox(width: 8),
+                    SizedBox(width: themeProvider.spacingSmall),
                     const Text('Pegar'),
                   ],
                 ),
@@ -314,100 +324,202 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           ),
         ),
       ),
-      drawer: Drawer(
-        child: Container(
-          color: themeProvider.cardBackground(context),
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
+      drawer: !isDesktop && !isTablet
+          ? _buildDrawer(tabs, themeProvider, localization, authService)
+          : null,
+      body: Row(
+        children: [
+          // NavigationRail para tablets y desktops
+          if (isDesktop || isTablet)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: _isExtendedRail ? 200 : 80,
+              child: NavigationRail(
+                selectedIndex: _currentIndex,
+                onDestinationSelected: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                labelType: _isExtendedRail
+                    ? NavigationRailLabelType.none
+                    : NavigationRailLabelType.selected,
+                extended: _isExtendedRail,
+                backgroundColor: themeProvider.cardBackground(context),
+                selectedIconTheme: IconThemeData(
                   color: themeProvider.primaryButtonColor(context),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const CircleAvatar(
-                      radius: 30,
-                      backgroundColor: Colors.white,
-                      child: Icon(
-                        Icons.person,
-                        size: 30,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      authService.currentUser?.username ?? '',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      authService.isAdmin
-                          ? localization.getText('admin')
-                          : 'Usuario',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+                unselectedIconTheme: IconThemeData(
+                  color: themeProvider.secondaryTextColor(context),
                 ),
+                selectedLabelTextStyle: TextStyle(
+                  color: themeProvider.primaryButtonColor(context),
+                  fontWeight: FontWeight.bold,
+                ),
+                unselectedLabelTextStyle: TextStyle(
+                  color: themeProvider.secondaryTextColor(context),
+                ),
+                destinations: tabs
+                    .map((tab) => NavigationRailDestination(
+                          icon: Icon(tab.icon),
+                          selectedIcon: Icon(tab.icon),
+                          label: Text(tab.title),
+                        ))
+                    .toList(),
+                // Añade footer con botón de logout
+                trailing: _isExtendedRail
+                    ? Expanded(
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                                bottom: themeProvider.spacingLarge),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Divider(),
+                                ListTile(
+                                  leading: const Icon(Icons.logout),
+                                  title: Text(localization.getText('logout')),
+                                  onTap: _logout,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
               ),
-              ...tabs.map((tab) => ListTile(
-                    leading: Icon(
-                      tab.icon,
-                      color: _currentIndex == tab.index
-                          ? themeProvider.primaryButtonColor(context)
-                          : null,
-                    ),
-                    title: Text(
-                      tab.title,
-                      style: TextStyle(
-                        color: _currentIndex == tab.index
-                            ? themeProvider.primaryButtonColor(context)
-                            : null,
-                        fontWeight:
-                            _currentIndex == tab.index ? FontWeight.bold : null,
-                      ),
-                    ),
-                    onTap: () {
-                      setState(() => _currentIndex = tab.index);
-                      Navigator.pop(context); // Close drawer
-                    },
-                  )),
-              const Divider(),
+            ),
+
+          // Contenido principal
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: tabs.map((tab) => tab.screen).toList(),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: (!isDesktop && !isTablet)
+          ? BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) {
+                setState(() => _currentIndex = index);
+              },
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: themeProvider.cardBackground(context),
+              selectedItemColor: themeProvider.primaryButtonColor(context),
+              unselectedItemColor: themeProvider.secondaryTextColor(context),
+              items: tabs
+                  .map((tab) => BottomNavigationBarItem(
+                        icon: Icon(tab.icon),
+                        label: tab.title,
+                      ))
+                  .toList(),
+              elevation: 8,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildDrawer(List<_TabItem> tabs, ThemeProvider themeProvider,
+      LocalizationProvider localization, AuthService authService) {
+    return Drawer(
+      backgroundColor: themeProvider.cardBackground(context),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: themeProvider.primaryButtonColor(context),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    Icons.person,
+                    size: 30,
+                    color: Colors.blue,
+                  ),
+                ),
+                SizedBox(height: themeProvider.spacingSmall),
+                Text(
+                  authService.currentUser?.username ?? '',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  authService.isAdmin
+                      ? localization.getText('admin')
+                      : 'Usuario',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...tabs.map((tab) => ListTile(
+                leading: Icon(
+                  tab.icon,
+                  color: _currentIndex == tab.index
+                      ? themeProvider.primaryButtonColor(context)
+                      : null,
+                ),
+                title: Text(
+                  tab.title,
+                  style: TextStyle(
+                    color: _currentIndex == tab.index
+                        ? themeProvider.primaryButtonColor(context)
+                        : null,
+                    fontWeight:
+                        _currentIndex == tab.index ? FontWeight.bold : null,
+                  ),
+                ),
+                onTap: () {
+                  setState(() => _currentIndex = tab.index);
+                  Navigator.pop(context); // Close drawer
+                },
+              )),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: Text(localization.getText('logout')),
+            onTap: _logout,
+          ),
+          const Divider(),
+          // Apartado de configuración en el drawer
+          ExpansionTile(
+            leading: const Icon(Icons.settings),
+            title: Text('Configuración'),
+            children: [
               ListTile(
-                leading: const Icon(Icons.logout),
-                title: Text(localization.getText('logout')),
-                onTap: _logout,
+                leading: const Icon(Icons.language),
+                title: Text(localization.getText('language')),
+                onTap: () {
+                  Provider.of<LocalizationProvider>(context, listen: false)
+                      .toggleLocale();
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                ),
+                title: Text(localization.getText('theme')),
+                onTap: () {
+                  Provider.of<ThemeProvider>(context, listen: false)
+                      .toggleTheme();
+                },
               ),
             ],
           ),
-        ),
-      ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: tabs.map((tab) => tab.screen).toList(),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() => _currentIndex = index);
-        },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: themeProvider.cardBackground(context),
-        selectedItemColor: themeProvider.primaryButtonColor(context),
-        unselectedItemColor: themeProvider.secondaryTextColor(context),
-        items: tabs
-            .map((tab) => BottomNavigationBarItem(
-                  icon: Icon(tab.icon),
-                  label: tab.title,
-                ))
-            .toList(),
+        ],
       ),
     );
   }

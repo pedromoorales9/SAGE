@@ -66,40 +66,49 @@ class CollaborativeScriptsApp extends StatelessWidget {
       title: localizationProvider.getText('title'),
       debugShowCheckedModeBanner: false,
       themeMode: themeProvider.themeMode,
-      theme: ThemeData(
-        brightness: Brightness.light,
-        primarySwatch: Colors.blue,
-        canvasColor: const Color(0xFFF2F2F7),
-        cardColor: Colors.white,
-        scaffoldBackgroundColor: const Color(0xFFF2F2F7),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          iconTheme: IconThemeData(color: Colors.black),
-          titleTextStyle: TextStyle(
-            color: Colors.black,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        canvasColor: const Color(0xFF1C1C1E),
-        cardColor: const Color(0xFF2C2C2E),
-        scaffoldBackgroundColor: const Color(0xFF1C1C1E),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF2C2C2E),
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+      theme: themeProvider.lightTheme,
+      darkTheme: themeProvider.darkTheme,
       home: const LoginScreen(),
+      onGenerateRoute: (settings) {
+        // Esto permite controlar las transiciones de navegación
+        // Pero mantenemos la navegación simple por ahora
+        return null;
+      },
+    );
+  }
+}
+
+// Extensión de NavigatorState para facilitar navegación con transiciones personalizadas
+extension NavigatorExtension on NavigatorState {
+  Future<T?> pushSlide<T>(Widget page) {
+    return push<T>(
+      PageRouteBuilder<T>(
+        pageBuilder: (context, animation, secondaryAnimation) => page,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOutCubic;
+
+          var tween =
+              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  Future<T?> pushFade<T>(Widget page) {
+    return push<T>(
+      PageRouteBuilder<T>(
+        pageBuilder: (context, animation, secondaryAnimation) => page,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
     );
   }
 }

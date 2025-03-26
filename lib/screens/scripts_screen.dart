@@ -12,6 +12,7 @@ import '../services/script_service.dart';
 import '../services/database_service.dart';
 import '../utils/localization.dart';
 import '../utils/theme_provider.dart';
+import '../utils/responsive.dart';
 import '../models/script_model.dart';
 import '../widgets/apple_button.dart';
 import '../widgets/code_editor.dart';
@@ -33,6 +34,15 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
   String _executionOutput = '';
   bool _isExecuting = false;
   bool _isLoading = true;
+  bool _isGridView = false; // Para alternar entre vista de lista y cuadrícula
+
+  // Filtros
+  bool _filterPython = false;
+  bool _filterPowershell = false;
+  bool _filterMyScripts = false;
+  bool _filterFavorites = false;
+  bool _filterRecent = false;
+  String? _selectedTag;
 
   @override
   void initState() {
@@ -50,7 +60,33 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final scripts = await _scriptService.getScripts();
+      // Aplicar filtros si están activos
+      String? fileType;
+      if (_filterPython && !_filterPowershell) {
+        fileType = 'py';
+      } else if (_filterPowershell && !_filterPython) {
+        fileType = 'ps1';
+      }
+
+      // Usuario actual para filtrar por "mis scripts"
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUsername =
+          _filterMyScripts ? authService.currentUser?.username : null;
+
+      final scripts = await _scriptService.getScripts(
+        searchQuery:
+            _searchController.text.isNotEmpty ? _searchController.text : null,
+        fileType: fileType,
+        tag: _selectedTag,
+        onlyFavorites: _filterFavorites,
+        uploadedBy: currentUsername,
+      );
+
+      // Ordenar por fecha si está activado el filtro de recientes
+      if (_filterRecent && scripts.isNotEmpty) {
+        scripts.sort((a, b) => b.uploadDate.compareTo(a.uploadDate));
+      }
+
       setState(() {
         _scripts = scripts;
         _isLoading = false;
@@ -66,8 +102,28 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
 
     try {
       final query = _searchController.text.trim();
+
+      // Aplicar filtros al buscar
+      String? fileType;
+      if (_filterPython && !_filterPowershell) {
+        fileType = 'py';
+      } else if (_filterPowershell && !_filterPython) {
+        fileType = 'ps1';
+      }
+
+      // Usuario actual para filtrar por "mis scripts"
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUsername =
+          _filterMyScripts ? authService.currentUser?.username : null;
+
       final scripts = await _scriptService.getScripts(
-          searchQuery: query.isNotEmpty ? query : null);
+        searchQuery: query.isNotEmpty ? query : null,
+        fileType: fileType,
+        tag: _selectedTag,
+        onlyFavorites: _filterFavorites,
+        uploadedBy: currentUsername,
+      );
+
       setState(() {
         _scripts = scripts;
         _isLoading = false;
@@ -416,6 +472,131 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
     );
   }
 
+  void _showTagsDialog() async {
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+
+    if (_selectedScript == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Seleccione un script primero')));
+      return;
+    }
+
+    final textController = TextEditingController();
+    if (_selectedScript!.tags.isNotEmpty) {
+      textController.text = _selectedScript!.tags.join(', ');
+    }
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Gestionar Etiquetas'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: textController,
+              decoration: InputDecoration(
+                labelText: 'Etiquetas (separadas por comas)',
+                hintText: 'python, servidor, backup, etc.',
+                filled: true,
+                fillColor: themeProvider.inputBackground(context),
+                border: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(themeProvider.borderRadiusMedium),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+                'Las etiquetas te ayudan a organizar y filtrar tus scripts.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final tags = textController.text
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .where((tag) => tag.isNotEmpty)
+                  .toList();
+              Navigator.of(context).pop(tags);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: themeProvider.primaryButtonColor(context),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      try {
+        await _scriptService.updateScriptTags(_selectedScript!.id, result);
+        await _loadScripts();
+
+        final script = _scripts.firstWhere((s) => s.id == _selectedScript!.id);
+        setState(() {
+          _selectedScript = script;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Etiquetas actualizadas correctamente')),
+        );
+      } catch (e) {
+        _showErrorDialog('Error al actualizar etiquetas: $e');
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_selectedScript == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Seleccione un script primero')));
+      return;
+    }
+
+    try {
+      await _scriptService.toggleFavorite(_selectedScript!.id);
+      await _loadScripts();
+
+      // Actualizar el script seleccionado con la información actualizada
+      final updatedScript =
+          _scripts.firstWhere((s) => s.id == _selectedScript!.id);
+      setState(() {
+        _selectedScript = updatedScript;
+      });
+
+      final message = _selectedScript!.isFavorite
+          ? 'Script añadido a favoritos'
+          : 'Script eliminado de favoritos';
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      _showErrorDialog('Error al cambiar estado de favoritos: $e');
+    }
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _filterPython = false;
+      _filterPowershell = false;
+      _filterMyScripts = false;
+      _filterFavorites = false;
+      _filterRecent = false;
+      _selectedTag = null;
+      _searchController.clear();
+    });
+    _loadScripts();
+  }
+
   void _selectScript(Script script) {
     setState(() {
       _selectedScript = script;
@@ -502,6 +683,30 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
             Future.delayed(Duration.zero, _downloadScript);
           },
         ),
+        PopupMenuItem(
+          child: ListTile(
+            leading: Icon(script.isFavorite ? Icons.star : Icons.star_border),
+            title: Text(script.isFavorite
+                ? 'Quitar de favoritos'
+                : 'Añadir a favoritos'),
+            dense: true,
+          ),
+          onTap: () {
+            _selectScript(script);
+            Future.delayed(Duration.zero, _toggleFavorite);
+          },
+        ),
+        PopupMenuItem(
+          child: ListTile(
+            leading: const Icon(Icons.label),
+            title: Text('Gestionar etiquetas'),
+            dense: true,
+          ),
+          onTap: () {
+            _selectScript(script);
+            Future.delayed(Duration.zero, _showTagsDialog);
+          },
+        ),
         if (isAdmin)
           PopupMenuItem(
             child: ListTile(
@@ -516,6 +721,238 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
           ),
       ],
     );
+  }
+
+  Widget _buildFilterChips() {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
+    return Wrap(
+      spacing: 8.0,
+      children: [
+        FilterChip(
+          label: const Text('Python'),
+          selected: _filterPython,
+          onSelected: (selected) {
+            setState(() {
+              _filterPython = selected;
+              _loadScripts();
+            });
+          },
+          backgroundColor: themeProvider.cardBackground(context),
+          selectedColor:
+              themeProvider.primaryButtonColor(context).withOpacity(0.2),
+          checkmarkColor: themeProvider.primaryButtonColor(context),
+        ),
+        FilterChip(
+          label: const Text('PowerShell'),
+          selected: _filterPowershell,
+          onSelected: (selected) {
+            setState(() {
+              _filterPowershell = selected;
+              _loadScripts();
+            });
+          },
+          backgroundColor: themeProvider.cardBackground(context),
+          selectedColor:
+              themeProvider.primaryButtonColor(context).withOpacity(0.2),
+          checkmarkColor: themeProvider.primaryButtonColor(context),
+        ),
+        FilterChip(
+          label: const Text('Mis Scripts'),
+          selected: _filterMyScripts,
+          onSelected: (selected) {
+            setState(() {
+              _filterMyScripts = selected;
+              _loadScripts();
+            });
+          },
+          backgroundColor: themeProvider.cardBackground(context),
+          selectedColor:
+              themeProvider.primaryButtonColor(context).withOpacity(0.2),
+          checkmarkColor: themeProvider.primaryButtonColor(context),
+        ),
+        FilterChip(
+          label: const Text('Favoritos'),
+          selected: _filterFavorites,
+          onSelected: (selected) {
+            setState(() {
+              _filterFavorites = selected;
+              _loadScripts();
+            });
+          },
+          backgroundColor: themeProvider.cardBackground(context),
+          selectedColor:
+              themeProvider.primaryButtonColor(context).withOpacity(0.2),
+          checkmarkColor: themeProvider.primaryButtonColor(context),
+          avatar: Icon(
+            _filterFavorites ? Icons.star : Icons.star_border,
+            size: 16,
+            color: _filterFavorites
+                ? themeProvider.primaryButtonColor(context)
+                : themeProvider.secondaryTextColor(context),
+          ),
+        ),
+        FilterChip(
+          label: const Text('Recientes'),
+          selected: _filterRecent,
+          onSelected: (selected) {
+            setState(() {
+              _filterRecent = selected;
+              _loadScripts();
+            });
+          },
+          backgroundColor: themeProvider.cardBackground(context),
+          selectedColor:
+              themeProvider.primaryButtonColor(context).withOpacity(0.2),
+          checkmarkColor: themeProvider.primaryButtonColor(context),
+        ),
+        ActionChip(
+          label: const Text('Limpiar filtros'),
+          onPressed: _clearFilters,
+          backgroundColor: themeProvider.cardBackground(context),
+          avatar: Icon(
+            Icons.clear_all,
+            size: 16,
+            color: themeProvider.secondaryTextColor(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGridView() {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isTabletOrDesktop =
+        Responsive.isTablet(context) || Responsive.isDesktop(context);
+    final columns =
+        isTabletOrDesktop ? (Responsive.isDesktop(context) ? 3 : 2) : 1;
+
+    return GridView.builder(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        childAspectRatio: 1.3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: _scripts.length,
+      padding: const EdgeInsets.all(10),
+      itemBuilder: (context, index) {
+        final script = _scripts[index];
+        final isSelected = _selectedScript?.id == script.id;
+
+        return GestureDetector(
+          onSecondaryTap: () => _showContextMenu(context, script),
+          child: Card(
+            elevation: 3,
+            shape: RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(themeProvider.borderRadiusMedium),
+              side: isSelected
+                  ? BorderSide(
+                      color: themeProvider.primaryButtonColor(context),
+                      width: 2,
+                    )
+                  : BorderSide.none,
+            ),
+            child: InkWell(
+              onTap: () => _selectScript(script),
+              borderRadius:
+                  BorderRadius.circular(themeProvider.borderRadiusMedium),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          script.filename.endsWith('.py')
+                              ? Icons.code
+                              : Icons.terminal,
+                          color: isSelected
+                              ? themeProvider.primaryButtonColor(context)
+                              : themeProvider.secondaryTextColor(context),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            script.filename,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: isSelected
+                                  ? themeProvider.primaryButtonColor(context)
+                                  : themeProvider.textColor(context),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (script.isFavorite)
+                          Icon(
+                            Icons.star,
+                            color: Colors.amber,
+                            size: 20,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${script.uploadedBy} • ${_formatDate(script.uploadDate)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: themeProvider.secondaryTextColor(context),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ejecutado ${script.executionCount} veces',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: themeProvider.secondaryTextColor(context),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (script.tags.isNotEmpty)
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: script.tags
+                            .map((tag) => Chip(
+                                  label: Text(
+                                    tag,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                ))
+                            .toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays < 1) {
+      if (difference.inHours < 1) {
+        return 'hace ${difference.inMinutes} minutos';
+      }
+      return 'hace ${difference.inHours} horas';
+    } else if (difference.inDays < 7) {
+      return 'hace ${difference.inDays} días';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
   }
 
   @override
@@ -610,34 +1047,99 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
                           ),
                           child: Column(
                             children: [
-                              // Search Bar
+                              // Search Bar y Controles
                               Padding(
                                 padding: const EdgeInsets.all(8.0),
-                                child: Row(
+                                child: Column(
                                   children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _searchController,
-                                        decoration: InputDecoration(
-                                          hintText:
-                                              localization.getText('search'),
-                                          prefixIcon: const Icon(Icons.search),
-                                          filled: true,
-                                          fillColor: themeProvider
-                                              .inputBackground(context),
-                                          border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            borderSide: BorderSide.none,
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _searchController,
+                                            decoration: InputDecoration(
+                                              hintText: localization
+                                                  .getText('search'),
+                                              prefixIcon:
+                                                  const Icon(Icons.search),
+                                              filled: true,
+                                              fillColor: themeProvider
+                                                  .inputBackground(context),
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                borderSide: BorderSide.none,
+                                              ),
+                                            ),
+                                            onSubmitted: (_) =>
+                                                _searchScripts(),
                                           ),
                                         ),
-                                        onSubmitted: (_) => _searchScripts(),
-                                      ),
+                                        IconButton(
+                                          icon: const Icon(Icons.refresh),
+                                          onPressed: _loadScripts,
+                                        ),
+                                      ],
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.refresh),
-                                      onPressed: _loadScripts,
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.add),
+                                          tooltip: 'Nuevo script',
+                                          onPressed: _createNewScript,
+                                        ),
+                                        // Toggle entre vista de lista y cuadrícula
+                                        IconButton(
+                                          icon: Icon(_isGridView
+                                              ? Icons.list
+                                              : Icons.grid_view),
+                                          tooltip: _isGridView
+                                              ? 'Vista de lista'
+                                              : 'Vista de cuadrícula',
+                                          onPressed: () {
+                                            setState(() {
+                                              _isGridView = !_isGridView;
+                                            });
+                                          },
+                                        ),
+                                        const Spacer(),
+                                        PopupMenuButton<String?>(
+                                          tooltip: 'Filtrar por etiqueta',
+                                          icon: const Icon(Icons.label),
+                                          onSelected: (tag) {
+                                            setState(() {
+                                              _selectedTag = tag;
+                                              _loadScripts();
+                                            });
+                                          },
+                                          itemBuilder: (context) {
+                                            final allTags = _scripts
+                                                .expand((script) => script.tags)
+                                                .toSet()
+                                                .toList()
+                                              ..sort();
+
+                                            return [
+                                              const PopupMenuItem(
+                                                value: null,
+                                                child:
+                                                    Text('Todas las etiquetas'),
+                                              ),
+                                              if (allTags.isNotEmpty)
+                                                const PopupMenuDivider(),
+                                              ...allTags
+                                                  .map((tag) => PopupMenuItem(
+                                                        value: tag,
+                                                        child: Text(tag),
+                                                      )),
+                                            ];
+                                          },
+                                        ),
+                                      ],
                                     ),
+                                    const SizedBox(height: 8),
+                                    _buildFilterChips(),
                                   ],
                                 ),
                               ),
@@ -658,52 +1160,90 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
                                               ),
                                             ),
                                           )
-                                        : ListView.builder(
-                                            itemCount: _scripts.length,
-                                            itemBuilder: (context, index) {
-                                              final script = _scripts[index];
-                                              final isSelected =
-                                                  _selectedScript?.id ==
-                                                      script.id;
+                                        : _isGridView
+                                            ? _buildGridView()
+                                            : ListView.builder(
+                                                itemCount: _scripts.length,
+                                                itemBuilder: (context, index) {
+                                                  final script =
+                                                      _scripts[index];
+                                                  final isSelected =
+                                                      _selectedScript?.id ==
+                                                          script.id;
 
-                                              return GestureDetector(
-                                                onSecondaryTap: () =>
-                                                    _showContextMenu(
-                                                        context, script),
-                                                child: ListTile(
-                                                  title: Text(script.filename),
-                                                  subtitle: Text(
-                                                    '${localization.getText('by')}: ${script.uploadedBy}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: themeProvider
-                                                          .secondaryTextColor(
-                                                              context),
+                                                  return GestureDetector(
+                                                    onSecondaryTap: () =>
+                                                        _showContextMenu(
+                                                            context, script),
+                                                    child: ListTile(
+                                                      title:
+                                                          Text(script.filename),
+                                                      subtitle: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            '${localization.getText('by')}: ${script.uploadedBy}',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color: themeProvider
+                                                                  .secondaryTextColor(
+                                                                      context),
+                                                            ),
+                                                          ),
+                                                          if (script
+                                                              .tags.isNotEmpty)
+                                                            Wrap(
+                                                              spacing: 4,
+                                                              children: script
+                                                                  .tags
+                                                                  .map(
+                                                                      (tag) =>
+                                                                          Chip(
+                                                                            label:
+                                                                                Text(tag, style: const TextStyle(fontSize: 10)),
+                                                                            materialTapTargetSize:
+                                                                                MaterialTapTargetSize.shrinkWrap,
+                                                                            padding:
+                                                                                EdgeInsets.zero,
+                                                                            visualDensity:
+                                                                                VisualDensity.compact,
+                                                                          ))
+                                                                  .toList(),
+                                                            ),
+                                                        ],
+                                                      ),
+                                                      leading: Icon(
+                                                        script.filename
+                                                                .endsWith('.py')
+                                                            ? Icons.code
+                                                            : Icons.terminal,
+                                                        color: isSelected
+                                                            ? themeProvider
+                                                                .primaryButtonColor(
+                                                                    context)
+                                                            : null,
+                                                      ),
+                                                      trailing: script
+                                                              .isFavorite
+                                                          ? const Icon(
+                                                              Icons.star,
+                                                              color:
+                                                                  Colors.amber)
+                                                          : null,
+                                                      selected: isSelected,
+                                                      selectedTileColor:
+                                                          themeProvider
+                                                              .primaryButtonColor(
+                                                                  context)
+                                                              .withOpacity(0.1),
+                                                      onTap: () =>
+                                                          _selectScript(script),
                                                     ),
-                                                  ),
-                                                  leading: Icon(
-                                                    script.filename
-                                                            .endsWith('.py')
-                                                        ? Icons.code
-                                                        : Icons.terminal,
-                                                    color: isSelected
-                                                        ? themeProvider
-                                                            .primaryButtonColor(
-                                                                context)
-                                                        : null,
-                                                  ),
-                                                  selected: isSelected,
-                                                  selectedTileColor:
-                                                      themeProvider
-                                                          .primaryButtonColor(
-                                                              context)
-                                                          .withOpacity(0.1),
-                                                  onTap: () =>
-                                                      _selectScript(script),
-                                                ),
-                                              );
-                                            },
-                                          ),
+                                                  );
+                                                },
+                                              ),
                               ),
 
                               // Action Buttons
@@ -792,6 +1332,32 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
                                           ),
                                         ),
                                         const Spacer(),
+                                        IconButton(
+                                          icon: Icon(
+                                              _selectedScript?.isFavorite ==
+                                                      true
+                                                  ? Icons.star
+                                                  : Icons.star_border),
+                                          tooltip:
+                                              _selectedScript?.isFavorite ==
+                                                      true
+                                                  ? 'Quitar de favoritos'
+                                                  : 'Añadir a favoritos',
+                                          onPressed: _selectedScript != null
+                                              ? _toggleFavorite
+                                              : null,
+                                          color: _selectedScript?.isFavorite ==
+                                                  true
+                                              ? Colors.amber
+                                              : null,
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.label),
+                                          tooltip: 'Gestionar etiquetas',
+                                          onPressed: _selectedScript != null
+                                              ? _showTagsDialog
+                                              : null,
+                                        ),
                                         IconButton(
                                           icon: const Icon(Icons.save),
                                           tooltip:

@@ -8,7 +8,9 @@ class Script {
   final int executionCount;
   final int downloads;
   final String uploadedBy;
-  
+  final List<String> tags;
+  final bool isFavorite;
+
   const Script({
     required this.id,
     required this.filename,
@@ -19,30 +21,36 @@ class Script {
     required this.executionCount,
     required this.downloads,
     required this.uploadedBy,
+    this.tags = const [],
+    this.isFavorite = false,
   });
-  
-  String get extension => filename.contains('.') 
-      ? filename.substring(filename.lastIndexOf('.')) 
+
+  String get extension => filename.contains('.')
+      ? filename.substring(filename.lastIndexOf('.'))
       : '';
-  
+
   factory Script.fromMap(Map<String, dynamic> map) {
     return Script(
       id: map['id'],
       filename: map['filename'],
       content: map['content'],
       uploadDate: DateTime.parse(map['upload_date']),
-      modifiedDate: map['modified_date'] != null 
-          ? DateTime.parse(map['modified_date']) 
+      modifiedDate: map['modified_date'] != null
+          ? DateTime.parse(map['modified_date'])
           : null,
-      lastExecution: map['last_execution'] != null 
-          ? DateTime.parse(map['last_execution']) 
+      lastExecution: map['last_execution'] != null
+          ? DateTime.parse(map['last_execution'])
           : null,
       executionCount: map['execution_count'] ?? 0,
       downloads: map['downloads'] ?? 0,
       uploadedBy: map['uploaded_by'] ?? 'Unknown',
+      tags: map['tags'] != null && map['tags'].toString().isNotEmpty
+          ? map['tags'].toString().split(',')
+          : [],
+      isFavorite: map['is_favorite'] == 1,
     );
   }
-  
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -54,9 +62,11 @@ class Script {
       'execution_count': executionCount,
       'downloads': downloads,
       'uploaded_by': uploadedBy,
+      'tags': tags.join(','),
+      'is_favorite': isFavorite ? 1 : 0,
     };
   }
-  
+
   Script copyWith({
     int? id,
     String? filename,
@@ -67,6 +77,8 @@ class Script {
     int? executionCount,
     int? downloads,
     String? uploadedBy,
+    List<String>? tags,
+    bool? isFavorite,
   }) {
     return Script(
       id: id ?? this.id,
@@ -78,6 +90,8 @@ class Script {
       executionCount: executionCount ?? this.executionCount,
       downloads: downloads ?? this.downloads,
       uploadedBy: uploadedBy ?? this.uploadedBy,
+      tags: tags ?? this.tags,
+      isFavorite: isFavorite ?? this.isFavorite,
     );
   }
 }
@@ -89,7 +103,8 @@ class ExecutionLog {
   final DateTime executionDate;
   final bool success;
   final String? scriptName;
-  
+  final String? errorMessage;
+
   const ExecutionLog({
     required this.id,
     required this.scriptId,
@@ -97,8 +112,9 @@ class ExecutionLog {
     required this.executionDate,
     required this.success,
     this.scriptName,
+    this.errorMessage,
   });
-  
+
   factory ExecutionLog.fromMap(Map<String, dynamic> map) {
     return ExecutionLog(
       id: map['id'],
@@ -107,6 +123,18 @@ class ExecutionLog {
       executionDate: DateTime.parse(map['execution_date']),
       success: map['success'] == 1,
       scriptName: map['filename'],
+      errorMessage: map['error_message'],
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'script_id': scriptId,
+      'username': username,
+      'execution_date': executionDate.toIso8601String(),
+      'success': success ? 1 : 0,
+      'error_message': errorMessage,
+    };
   }
 }
